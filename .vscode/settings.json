@@ -1,0 +1,24 @@
+{
+    "idf.portWin": "COM8",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-bridge.cfg"
+    ],
+    "idf.customExtraVars": {
+        "IDF_TARGET": "esp32s3"
+    },
+    "idf.flashType": "UART",
+    "files.associations": {
+        "mic_speech.h": "c",
+        "lvgl_music.h": "c",
+        "st77916.h": "c",
+        "lvgl.h": "c",
+        "esp_lcd_st77916.h": "c",
+        "lvgl_driver.h": "c",
+        "cst816.h": "c",
+        "esp_err.h": "c",
+        "qrcode.h": "c",
+        "egg_demo_lib.h": "c",
+        "tca9554pwr.h": "c",
+        "pwr_key.h": "c"
+    }
+}
