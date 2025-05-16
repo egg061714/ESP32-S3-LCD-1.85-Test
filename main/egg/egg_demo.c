@@ -3,11 +3,13 @@
 #include "lvgl.h"
 #define TAG "BLE_WIFI"
 
-
+#define MESH_ID  {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
+// #define MESH_ROUTER_SSID "esp32_user"
+// #define MESH_ROUTER_PASS "0916747615"
 
 bool prov;
 bool is_ble_initialized =false;
-
+wifi_config_t current_conf;
 
 
     wifi_prov_security_t security = WIFI_PROV_SECURITY_1;
@@ -15,12 +17,36 @@ bool is_ble_initialized =false;
     const char *service_name = "PROV_ESP32";  // BLE 廣播名稱
     const char *service_key = NULL;  // 可設定密鑰
 
+void node_send_task(void *arg)
+{
+    mesh_addr_t parent_addr;
+    mesh_data_t data;
+    const char *msg = "Hello from NodeB!";
+    uint8_t data_buf[60];
 
+    memcpy(data_buf, msg, strlen(msg) + 1);
+    data.data = data_buf;
+    data.size = strlen(msg) + 1;
+    data.proto = MESH_PROTO_BIN;
+    data.tos = MESH_TOS_P2P;
+
+        esp_mesh_get_parent_bssid(&parent_addr); // 抓自己的上層parent address
+        esp_err_t err = esp_mesh_send(&parent_addr, &data, MESH_DATA_TODS, NULL, 0);
+        if (err == ESP_OK) {
+            printf("Node: Sent message to Root\n");
+        } else {
+            printf("Node: Failed to send message\n");
+        }
+        vTaskDelete(NULL);
+
+
+}
 static void btn_event_cb(lv_event_t * e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_CLICKED) {
         ESP_LOGI("LVGL", "🔘 按鈕被按下了！");
+        xTaskCreate(node_send_task, "node_send_task", 4096, NULL, 5, NULL);
     }
 }
 
@@ -43,6 +69,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ESP_LOGI(TAG, "✅ Wi-Fi 連線成功!");
         LCD_PrintText("BLE Provisioning_success");
+        mesh_commicate();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGE(TAG, "⚠️ Wi-Fi 斷線，重新嘗試...");
         esp_wifi_connect();
@@ -109,12 +136,13 @@ void blu_prov()
     } else {
         ESP_LOGI(TAG, "📶 已有憑證，直接連線 Wi-Fi");
         LCD_PrintText("No need to connect to Bluetooth");
-        wifi_config_t current_conf;
+        
     esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &current_conf);
     if (err == ESP_OK)
     {
     ESP_LOGI("WIFI", "✅ Connected to SSID: %s", (char *)current_conf.sta.ssid);
     ESP_LOGI("WIFI", "🔐 Password used : %s", (char *)current_conf.sta.password);
+    mesh_commicate();
     }
 
         // 這邊不用再 set_mode 和 start了，因為上面已經 start Wi-Fi
@@ -137,7 +165,31 @@ void LCD_PrintText(const char *text)
     lv_label_set_text(label, text);
     lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 }
+void mesh_commicate()
+{
+    mesh_cfg_t mesh_cfg = MESH_INIT_CONFIG_DEFAULT();
+    uint8_t mesh_id[6] = MESH_ID;
+    memcpy(mesh_cfg.mesh_id.addr, mesh_id, 6);
 
+    mesh_cfg.mesh_ap.max_connection = 6;
+    memcpy((char *)mesh_cfg.mesh_ap.password, "12345678", strlen("12345678"));
+
+// 設定Router
+    strcpy((char *)mesh_cfg.router.ssid, (char *)current_conf.sta.ssid);
+    mesh_cfg.router.ssid_len = strlen((char *)current_conf.sta.ssid);  // 🔥 這行是重點
+    memcpy(mesh_cfg.router.password, current_conf.sta.password, sizeof(mesh_cfg.router.password));
+
+
+
+    mesh_cfg.channel = 0;
+    mesh_cfg.allow_channel_switch = true;
+
+    ESP_ERROR_CHECK(esp_mesh_init());
+    ESP_ERROR_CHECK(esp_mesh_set_config(&mesh_cfg));
+    ESP_ERROR_CHECK(esp_mesh_set_self_organized(true, true));
+    // ESP_ERROR_CHECK(esp_mesh_set_type(MESH_ROOT)); // Root這邊要設定自己是Root(目前是發射模式)
+    ESP_ERROR_CHECK(esp_mesh_start());
+}
 void EGG_main(void)
 {
     nvs_init();

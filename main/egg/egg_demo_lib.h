@@ -11,6 +11,9 @@
 #include "wifi_provisioning/scheme_ble.h"
 #include "nvs_flash.h"
 #include "protocomm_security.h"
+#include "esp_mesh.h"
+#include "esp_mac.h" 
+
 
 // #include "qrcode.h"
 #include "esp_lcd_panel_ops.h"
@@ -28,5 +31,6 @@ static void start_ble_provisioning();
 static void btn_event_cb(lv_event_t * e);
 void show_lvgl_button(void);
 void nvs_init();
+void mesh_commicate();
 void LCD_PrintText(const char *text);
 void EGG_main(void);
