@@ -189,6 +189,7 @@ void mesh_commicate()
     ESP_ERROR_CHECK(esp_mesh_set_self_organized(true, true));
     // ESP_ERROR_CHECK(esp_mesh_set_type(MESH_ROOT)); // Root這邊要設定自己是Root(目前是發射模式)
     ESP_ERROR_CHECK(esp_mesh_start());
+     ESP_LOGI("MESH", "✅ Mesh started!");
 }
 void EGG_main(void)
 {
