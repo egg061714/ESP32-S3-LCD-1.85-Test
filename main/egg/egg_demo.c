@@ -17,38 +17,79 @@ wifi_config_t current_conf;
     const char *service_name = "PROV_ESP32";  // BLE 廣播名稱
     const char *service_key = NULL;  // 可設定密鑰
 
-void node_send_task(void *arg)
+static void slider_event_cb(lv_event_t * e)
 {
+    lv_obj_t * slider = lv_event_get_target(e);
+    int32_t ligh = lv_slider_get_value(slider);
+
+    // label 存在 slider->user_data
+    lv_obj_t * label = (lv_obj_t *)lv_event_get_user_data(e);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%ld", ligh);
+    lv_label_set_text(label, buf);
+
+    // 實際調背光
+    Set_Backlight(ligh);
+}
+
+void show_lvgl_brightness_slider(void)
+{
+    lv_obj_t * slider = lv_slider_create(lv_scr_act());
+    lv_obj_set_width(slider, 200);
+    lv_obj_align(slider, LV_ALIGN_CENTER, 0, 40);
+    lv_slider_set_range(slider, 0, 100);
+    lv_slider_set_value(slider, 100, LV_ANIM_OFF);
+
+    lv_obj_t * label = lv_label_create(lv_scr_act());
+    lv_label_set_text(label, "100");
+    lv_obj_align_to(label, slider, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
+
+    // 綁定 callback，label 給 user_data
+    lv_obj_add_event_cb(slider, slider_event_cb, LV_EVENT_VALUE_CHANGED, label);
+}
+
+void send_int_value(int value) {
     mesh_addr_t parent_addr;
     mesh_data_t data;
-    const char *msg = "Hello from NodeB!";
-    uint8_t data_buf[60];
 
-    memcpy(data_buf, msg, strlen(msg) + 1);
-    data.data = data_buf;
-    data.size = strlen(msg) + 1;
+    data.data = &value;
+    data.size = sizeof(value);
     data.proto = MESH_PROTO_BIN;
     data.tos = MESH_TOS_P2P;
 
-        esp_mesh_get_parent_bssid(&parent_addr); // 抓自己的上層parent address
-        esp_err_t err = esp_mesh_send(&parent_addr, &data, MESH_DATA_TODS, NULL, 0);
-        if (err == ESP_OK) {
-            printf("Node: Sent message to Root\n");
-        } else {
-            printf("Node: Failed to send message\n");
-        }
-        vTaskDelete(NULL);
+    esp_mesh_get_parent_bssid(&parent_addr);
+    esp_err_t err = esp_mesh_send(&parent_addr, &data, MESH_DATA_TODS, NULL, 0);
 
-
-}
-static void btn_event_cb(lv_event_t * e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_CLICKED) {
-        ESP_LOGI("LVGL", "🔘 按鈕被按下了！");
-        xTaskCreate(node_send_task, "node_send_task", 4096, NULL, 5, NULL);
+    if (err == ESP_OK) {
+        printf("Node: Sent int value %d to Root\n", value);
+    } else {
+        printf("Node: Failed to send message\n");
     }
 }
+
+
+
+static void btn_event_cb(lv_event_t * e)
+{
+    static int toggle = 0; // 靜態變數記錄狀態
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *btn = lv_event_get_target(e);
+    lv_obj_t *label = lv_obj_get_child(btn, 0);
+
+    if (code == LV_EVENT_CLICKED) {
+        if (toggle) {
+            ESP_LOGI("LVGL", "🔘 OFF 被按下了！");
+            send_int_value(0);
+            lv_label_set_text(label, "on");
+        } else {
+            ESP_LOGI("LVGL", "🔘 ON 被按下了！");
+            send_int_value(1);
+            lv_label_set_text(label, "off");
+        }
+        toggle = !toggle; // 切換狀態
+    }
+}
+
 
 void show_lvgl_button(void)
 {
@@ -202,7 +243,7 @@ void EGG_main(void)
     // ✅ 啟動 BLE Provisioning
     blu_prov();
     show_lvgl_button();
-    
+    show_lvgl_brightness_slider();
 
     while (1) {
         lv_timer_handler();
