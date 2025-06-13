@@ -19,6 +19,9 @@
 #include "esp_lcd_panel_ops.h"
 #include "ST77916.h"          // 你原本的 LCD 驅動，內含 panel_handle
 
+#include "cJSON.h"
+
+void send_mac_to_root();
 
 
 // void bl_pwm_set_percent(uint8_t percent);

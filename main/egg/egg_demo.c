@@ -2,22 +2,91 @@
 
 #include "lvgl.h"
 #define TAG "BLE_WIFI"
-
+static lv_obj_t *status_label = NULL;
 #define MESH_ID  {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF}
 // #define MESH_ROUTER_SSID "esp32_user"
 // #define MESH_ROUTER_PASS "0916747615"
+mesh_addr_t root_addr;
+bool prov;      //檢測是否有憑證
+bool is_ble_initialized =false;  //避免重複執行
+wifi_config_t current_conf;  //wifi 存放處
 
-bool prov;
-bool is_ble_initialized =false;
-wifi_config_t current_conf;
-
-
+//-----------------藍芽宣告區------------------------------
     wifi_prov_security_t security = WIFI_PROV_SECURITY_1;
     const char *pop = "abcd1234";  // Proof of Possession
     const char *service_name = "PROV_ESP32";  // BLE 廣播名稱
     const char *service_key = NULL;  // 可設定密鑰
+//--------------------------------------------------------
 
-static void slider_event_cb(lv_event_t * e)
+static void mesh_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    mesh_addr_t id = {0,};
+    static bool mac_sent = false;
+
+    switch (event_id) {
+        case MESH_EVENT_PARENT_CONNECTED:
+            ESP_LOGI("MESH", "✅ Connected to parent/root!");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            // 等 mesh 完成才寄送
+            if(!mac_sent) {
+                send_mac_to_root();
+                mac_sent = true; // 只送一次
+            }
+            break;
+
+        case MESH_EVENT_PARENT_DISCONNECTED:
+            ESP_LOGI("MESH", "❌ Disconnected from parent/root");
+            mac_sent = false; // 下次重連才會再送
+
+            break;
+        default:
+            break;
+    }
+}
+
+void send_mac_to_root()
+{
+    // 取得自身 MAC
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    printf("My MAC: " MACSTR "\n", MAC2STR(mac));
+    
+    char mac_str[18];
+    snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    // 組 JSON 字串
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddStringToObject(json, "type", "register");
+    cJSON_AddStringToObject(json, "mac", mac_str);
+    cJSON_AddStringToObject(json, "name", "device1");  // 可自訂節點名
+    char *payload = cJSON_PrintUnformatted(json);
+
+    // 發送資料給 root（MESH_ROOT）
+mesh_data_t data = {
+    .data = (uint8_t *)payload,
+    .size = strlen(payload),
+    .proto = MESH_PROTO_BIN,
+    .tos = MESH_TOS_P2P
+};
+
+
+esp_mesh_get_parent_bssid(&root_addr);  // ✅ 正確取得 Root 位址
+
+
+esp_err_t err = esp_mesh_send(&root_addr, &data, MESH_DATA_TODS, NULL, 0);
+
+
+
+if (err != ESP_OK) {
+    ESP_LOGE("MESH", "Failed to send MAC: %s", esp_err_to_name(err));
+}
+
+
+    cJSON_Delete(json);
+    free(payload);
+}
+
+static void slider_event_cb(lv_event_t * e)  //調整背光
 {
     lv_obj_t * slider = lv_event_get_target(e);
     int32_t ligh = lv_slider_get_value(slider);
@@ -32,7 +101,7 @@ static void slider_event_cb(lv_event_t * e)
     Set_Backlight(ligh);
 }
 
-void show_lvgl_brightness_slider(void)
+void show_lvgl_brightness_slider(void)  //生成滑動介面
 {
     lv_obj_t * slider = lv_slider_create(lv_scr_act());
     lv_obj_set_width(slider, 200);
@@ -48,8 +117,9 @@ void show_lvgl_brightness_slider(void)
     lv_obj_add_event_cb(slider, slider_event_cb, LV_EVENT_VALUE_CHANGED, label);
 }
 
-void send_int_value(int value) {
-    mesh_addr_t parent_addr;
+void send_int_value(int value)   //寄送訊息
+{
+    // mesh_addr_t parent_addr;
     mesh_data_t data;
 
     data.data = &value;
@@ -57,8 +127,8 @@ void send_int_value(int value) {
     data.proto = MESH_PROTO_BIN;
     data.tos = MESH_TOS_P2P;
 
-    esp_mesh_get_parent_bssid(&parent_addr);
-    esp_err_t err = esp_mesh_send(&parent_addr, &data, MESH_DATA_TODS, NULL, 0);
+    // esp_mesh_get_parent_bssid(&parent_addr);
+    esp_err_t err = esp_mesh_send(&root_addr, &data, MESH_DATA_TODS, NULL, 0);
 
     if (err == ESP_OK) {
         printf("Node: Sent int value %d to Root\n", value);
@@ -69,7 +139,7 @@ void send_int_value(int value) {
 
 
 
-static void btn_event_cb(lv_event_t * e)
+static void btn_event_cb(lv_event_t * e)  //判斷按鈕變化來輸出訊息
 {
     static int toggle = 0; // 靜態變數記錄狀態
     lv_event_code_t code = lv_event_get_code(e);
@@ -91,7 +161,7 @@ static void btn_event_cb(lv_event_t * e)
 }
 
 
-void show_lvgl_button(void)
+void show_lvgl_button(void)   //生成按鈕
 {
     lv_obj_t * btn = lv_btn_create(lv_scr_act());    // 在主畫面上建立按鈕
     // lv_obj_center(btn);                              // 將按鈕置中
@@ -104,19 +174,21 @@ void show_lvgl_button(void)
     lv_obj_center(label);
 }
 
-static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) //wifi事件處理函式(即時顯示wifi連線狀況)
+{
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ESP_LOGI(TAG, "✅ Wi-Fi 連線成功!");
         LCD_PrintText("BLE Provisioning_success");
-        mesh_commicate();
+        // mesh_commicate();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGE(TAG, "⚠️ Wi-Fi 斷線，重新嘗試...");
         esp_wifi_connect();
     }
 }
-static void wifi_init() {
+static void wifi_init() //wifi初始化
+{
     // ESP_ERROR_CHECK(esp_netif_init());
     // ESP_ERROR_CHECK(esp_event_loop_create_default());
 
@@ -133,7 +205,8 @@ static void wifi_init() {
 
     ESP_LOGI(TAG, "🚀 Wi-Fi 初始化完成");
 }
-static void prov_event_handler(void *user_data, wifi_prov_cb_event_t event, void *event_data) {
+static void prov_event_handler(void *user_data, wifi_prov_cb_event_t event, void *event_data) 
+{
     switch (event) {
         case WIFI_PROV_START:
             ESP_LOGI(TAG, "📡 BLE Provisioning 開始...");
@@ -199,13 +272,17 @@ void nvs_init()
     }
     ESP_ERROR_CHECK(ret);
 }
+
+
 void LCD_PrintText(const char *text)
 {
-    lv_obj_clean(lv_scr_act());  // 清除畫面（避免重複堆疊）
-    lv_obj_t *label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, text);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    if (!status_label) {
+        status_label = lv_label_create(lv_scr_act());
+        lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 0); // 顯示在上方
+    }
+    lv_label_set_text(status_label, text);
 }
+
 void mesh_commicate()
 {
     mesh_cfg_t mesh_cfg = MESH_INIT_CONFIG_DEFAULT();
@@ -228,9 +305,10 @@ void mesh_commicate()
     ESP_ERROR_CHECK(esp_mesh_init());
     ESP_ERROR_CHECK(esp_mesh_set_config(&mesh_cfg));
     ESP_ERROR_CHECK(esp_mesh_set_self_organized(true, true));
-    // ESP_ERROR_CHECK(esp_mesh_set_type(MESH_ROOT)); // Root這邊要設定自己是Root(目前是發射模式)
     ESP_ERROR_CHECK(esp_mesh_start());
-     ESP_LOGI("MESH", "✅ Mesh started!");
+    ESP_ERROR_CHECK(esp_event_handler_register(MESH_EVENT, ESP_EVENT_ANY_ID, &mesh_event_handler, NULL));
+    ESP_LOGI("MESH", "✅ Mesh started!");
+    
 }
 void EGG_main(void)
 {

@@ -1,5 +1,5 @@
 {
-    "idf.portWin": "COM8",
+    "idf.portWin": "COM9",
     "idf.openOcdConfigs": [
         "board/esp32s3-bridge.cfg"
     ],
@@ -19,6 +19,7 @@
         "qrcode.h": "c",
         "egg_demo_lib.h": "c",
         "tca9554pwr.h": "c",
-        "pwr_key.h": "c"
+        "pwr_key.h": "c",
+        "esp_log.h": "c"
     }
 }
