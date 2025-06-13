@@ -197,10 +197,10 @@ static void wifi_init() //wifi初始化
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
+    // ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
+    // ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    // ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "🚀 Wi-Fi 初始化完成");
@@ -293,10 +293,9 @@ void mesh_commicate()
     memcpy((char *)mesh_cfg.mesh_ap.password, "12345678", strlen("12345678"));
 
 // 設定Router
-    strcpy((char *)mesh_cfg.router.ssid, (char *)current_conf.sta.ssid);
-    mesh_cfg.router.ssid_len = strlen((char *)current_conf.sta.ssid);  // 🔥 這行是重點
-    memcpy(mesh_cfg.router.password, current_conf.sta.password, sizeof(mesh_cfg.router.password));
-
+    strcpy((char *)mesh_cfg.router.ssid, "FAKE_ROUTER");
+    mesh_cfg.router.ssid_len = strlen((char *)mesh_cfg.router.ssid);
+    memset(mesh_cfg.router.password, 0, sizeof(mesh_cfg.router.password));
 
 
     mesh_cfg.channel = 0;
@@ -306,7 +305,6 @@ void mesh_commicate()
     ESP_ERROR_CHECK(esp_mesh_set_config(&mesh_cfg));
     ESP_ERROR_CHECK(esp_mesh_set_self_organized(true, true));
     ESP_ERROR_CHECK(esp_mesh_start());
-    ESP_ERROR_CHECK(esp_event_handler_register(MESH_EVENT, ESP_EVENT_ANY_ID, &mesh_event_handler, NULL));
     ESP_LOGI("MESH", "✅ Mesh started!");
     
 }
@@ -319,7 +317,8 @@ void EGG_main(void)
 
     wifi_init();
     // ✅ 啟動 BLE Provisioning
-    blu_prov();
+    // blu_prov();
+    mesh_commicate();
     show_lvgl_button();
     show_lvgl_brightness_slider();
 
